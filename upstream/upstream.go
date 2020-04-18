@@ -8,6 +8,7 @@ import (
 
 	"github.com/ejoy/goscon/scp"
 	"github.com/xjdrew/glog"
+	"github.com/gorilla/websocket"
 )
 
 // ErrNoHost .
@@ -113,7 +114,7 @@ func (u *upstreams) GetHost(preferred string) *Host {
 }
 
 // NewConn create a new connection, pair with remoteConn
-func (u *upstreams) NewConn(remoteConn *scp.Conn) (conn net.Conn, err error) {
+func (u *upstreams) NewConn(remoteConn *scp.Conn) (conn *websocket.Conn, err error) {
 	tserver := remoteConn.TargetServer()
 	host := u.GetHost(tserver)
 	if host == nil {
@@ -122,7 +123,7 @@ func (u *upstreams) NewConn(remoteConn *scp.Conn) (conn net.Conn, err error) {
 		return
 	}
 
-	conn, err = net.DialTCP("tcp", nil, host.addr)
+	conn, _, err = websocket.DefaultDialer.Dial(host.Addr, nil)
 	if err != nil {
 		glog.Errorf("connect to <%s> failed: %s", host.Addr, err.Error())
 		return
@@ -134,7 +135,7 @@ func (u *upstreams) NewConn(remoteConn *scp.Conn) (conn net.Conn, err error) {
 var defaultUpstreams upstreams
 
 // NewConn create a new connection, pair with remoteConn
-func NewConn(remoteConn *scp.Conn) (conn net.Conn, err error) {
+func NewConn(remoteConn *scp.Conn) (conn *websocket.Conn, err error) {
 	return defaultUpstreams.NewConn(remoteConn)
 }
 

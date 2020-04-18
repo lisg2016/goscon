@@ -17,11 +17,11 @@ var copyPool = sync.Pool{
 }
 
 type connPair struct {
-	LocalConn  net.Conn // scp server <-> local server
+	LocalConn  scp.ConnInterface // scp server <-> local server
 	RemoteConn *SCPConn // client <-> scp server
 }
 
-func pump(id int, tag string, dst net.Conn, src net.Conn, ch chan<- int) error {
+func pump(id int, tag string, dst scp.ConnInterface, src scp.ConnInterface, ch chan<- int) error {
 	var err error
 	var written, packets int
 	buf := copyPool.Get().([]byte)
@@ -186,12 +186,15 @@ func (ss *SCPServer) onNewConn(scon *scp.Conn) bool {
 		return false
 	}
 
-	connPair.LocalConn = localConn
+	connPair.LocalConn = &wsConn {
+		localConn,
+		0,
+	}
 	connPair.Pump()
 	return true
 }
 
-func (ss *SCPServer) handleConn(conn net.Conn) {
+func (ss *SCPServer) handleConn(conn scp.ConnInterface) {
 	connectionAccepts.Inc()
 
 	defer func() {
@@ -231,8 +234,8 @@ func (ss *SCPServer) handleConn(conn net.Conn) {
 }
 
 // Serve accepts incoming connections on the Listener l
-func (ss *SCPServer) Serve(l net.Listener) error {
-	addr := l.Addr().String()
+func (ss *SCPServer) Serve(l scp.Accept) error {
+	addr := l.Addr()
 	glog.Infof("serve: addr=%s", addr)
 
 	var tempDelay time.Duration // how long to sleep on accept failure

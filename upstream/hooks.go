@@ -2,11 +2,13 @@ package upstream
 
 import (
 	"net"
+
+	"github.com/gorilla/websocket"
 )
 
 // Hook defines hook interface for upstream
 type Hook interface {
-	AfterConnected(local net.Conn, remote net.Conn) (err error)
+	AfterConnected(local *websocket.Conn, remote net.Conn) (err error)
 }
 
 // installed hook
@@ -20,7 +22,7 @@ func setHook(hook Hook) {
 }
 
 // OnAfterConnected call when upstream connection is connected
-func OnAfterConnected(local net.Conn, remote net.Conn) (err error) {
+func OnAfterConnected(local *websocket.Conn, remote net.Conn) (err error) {
 	if upstreamHook == nil {
 		return
 	}

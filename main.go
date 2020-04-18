@@ -8,12 +8,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"sync"
 
 	"github.com/spf13/viper"
 	"github.com/xjdrew/glog"
+
+	"github.com/ejoy/goscon/scp"
 )
 
 // log rule:
@@ -74,47 +75,24 @@ func main() {
 	var wg sync.WaitGroup
 
 	// listen
-	tcpListen := viper.GetString("tcp")
-	if tcpListen != "" {
-		l, err := NewTCPListener(tcpListen)
+	wsListen := viper.GetString("ws")
+	if wsListen != "" {
+		l, err := NewWsListener(wsListen)
 		if err != nil {
-			glog.Errorf("tcp listen failed: addr=%s, err=%s", tcpListen, err.Error())
+			glog.Errorf("tcp listen failed: addr=%s, err=%s", wsListen, err.Error())
 			os.Exit(1)
 		}
-		glog.Infof("tcp listen start: addr=%s", tcpListen)
+		glog.Infof("ws listen start: addr=%s", wsListen)
 
 		wg.Add(1)
-		go func(l net.Listener) {
+		go func(l scp.Accept) {
 			defer l.Close()
 			defer wg.Done()
 			err := defaultServer.Serve(l)
-			glog.Errorf("tcp listen stop: addr=%s, err=%s", tcpListen, err.Error())
+			glog.Errorf("tcp listen stop: addr=%s, err=%s", wsListen, err.Error())
 		}(l)
 	}
 
-	kcpListen := viper.GetString("kcp")
-	if kcpListen != "" {
-		reuseport := viper.GetInt("kcp_option.reuseport")
-		if reuseport <= 0 {
-			reuseport = 1
-		}
-		for i := 0; i < reuseport; i++ {
-			l, err := NewKCPListener(kcpListen)
-			if err != nil {
-				glog.Errorf("kcp listen failed: addr=%s, err=%s", kcpListen, err.Error())
-				os.Exit(1)
-			}
-			glog.Infof("kcp listen start: addr=%s", kcpListen)
-
-			wg.Add(1)
-			go func(l net.Listener) {
-				defer l.Close()
-				defer wg.Done()
-				err := defaultServer.Serve(l)
-				glog.Errorf("kcp listen stop: addr=%s, err=%s", tcpListen, err.Error())
-			}(l)
-		}
-	}
 	wg.Wait()
 	glog.Flush()
 }

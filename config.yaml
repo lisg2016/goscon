@@ -1,6 +1,7 @@
 manager: 127.0.0.1:6620
 tcp: 0.0.0.0:1248
 kcp: 0.0.0.0:1248
+ws: 0.0.0.0:9988
 scp:
   handshake_timeout: 30
   reuse_time: 30

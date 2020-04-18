@@ -15,16 +15,17 @@ import (
 
 type cipherConnReader struct {
 	sync.Mutex
-	rd     io.Reader
+	rd     ConnInterface
 	cipher *rc4.Cipher
 	count  int // bytes read
 }
 
 type cipherConnWriter struct {
 	sync.Mutex
-	wr     io.Writer
+	wr     ConnInterface
 	cipher *rc4.Cipher
 	count  int // bytes writed
+	reuseBuffer *loopBuffer
 }
 
 func genRC4Key(v1 leu64, v2 leu64, key []byte) {
@@ -32,7 +33,7 @@ func genRC4Key(v1 leu64, v2 leu64, key []byte) {
 	copy(key, h[:])
 }
 
-func (c *cipherConnReader) SetReader(rd io.Reader) {
+func (c *cipherConnReader) SetReader(rd ConnInterface) {
 	c.Lock()
 	defer c.Unlock()
 	c.rd = rd
@@ -49,15 +50,18 @@ func (c *cipherConnReader) Read(p []byte) (n int, err error) {
 	if err != nil {
 		return
 	}
-	c.cipher.XORKeyStream(p[:n], p[:n])
+	if c.cipher != nil {
+		c.cipher.XORKeyStream(p[:n], p[:n])
+	}
 	c.count += n
 	return
 }
 
-func (c *cipherConnWriter) SetWriter(wr io.Writer) {
+func (c *cipherConnWriter) SetWriter(wr ConnInterface, rb *loopBuffer) {
 	c.Lock()
 	defer c.Unlock()
 	c.wr = wr
+	c.reuseBuffer = rb
 }
 
 func (c *cipherConnWriter) GetBytesSent() int {
@@ -68,7 +72,15 @@ func (c *cipherConnWriter) Write(b []byte) (int, error) {
 	c.Lock()
 	defer c.Unlock()
 
+	if _, err := c.reuseBuffer.Write(b); err != nil {
+		return 0, err
+	}
+
 	sz := len(b)
+	if c.cipher == nil {
+		c.count += sz
+		return c.wr.Write(b)
+	}
 	buf := defaultBufferPool.Get(sz)
 	defer defaultBufferPool.Put(buf)
 
@@ -81,15 +93,16 @@ func (c *cipherConnWriter) Write(b []byte) (int, error) {
 
 func deepCopyCipherConnReader(in *cipherConnReader) *cipherConnReader {
 	return &cipherConnReader{
-		cipher: &(*in.cipher),
+		cipher: nil, // &(*in.cipher),
 		count:  in.count,
 	}
 }
 
 func deepCopyCipherConnWriter(out *cipherConnWriter) *cipherConnWriter {
 	return &cipherConnWriter{
-		cipher: &(*out.cipher),
+		cipher: nil, // &(*out.cipher),
 		count:  out.count,
+		reuseBuffer: out.reuseBuffer,
 	}
 }
 
@@ -103,9 +116,9 @@ func newCipherConnReader(secret leu64) *cipherConnReader {
 	genRC4Key(secret, toLeu64(2), key[16:24])
 	genRC4Key(secret, toLeu64(3), key[24:32])
 
-	c, _ := rc4.NewCipher(key)
+	// c, _ := rc4.NewCipher(key)
 	return &cipherConnReader{
-		cipher: c,
+		// cipher: c,
 	}
 }
 
@@ -119,16 +132,16 @@ func newCipherConnWriter(secret leu64) *cipherConnWriter {
 	genRC4Key(secret, toLeu64(2), key[16:24])
 	genRC4Key(secret, toLeu64(3), key[24:32])
 
-	c, _ := rc4.NewCipher(key)
+	// c, _ := rc4.NewCipher(key)
 	return &cipherConnWriter{
-		cipher: c,
+		// cipher: c,
 	}
 }
 
 // Conn .
 type Conn struct {
 	// constant
-	conn   net.Conn
+	conn   ConnInterface
 	config *Config
 
 	connMutex  sync.Mutex
@@ -159,7 +172,7 @@ func (c *Conn) initNewConn(id int, secret leu64) {
 	c.in = newCipherConnReader(c.secret)
 	c.out = newCipherConnWriter(c.secret)
 	c.in.SetReader(c.conn)
-	c.out.SetWriter(io.MultiWriter(c.reuseBuffer, c.conn))
+	c.out.SetWriter(c.conn, c.reuseBuffer)
 
 	c.reused = false
 }
@@ -191,7 +204,7 @@ func (c *Conn) spawn(new *Conn) bool {
 	new.in = deepCopyCipherConnReader(c.in)
 	new.out = deepCopyCipherConnWriter(c.out)
 	new.in.SetReader(new.conn)
-	new.out.SetWriter(io.MultiWriter(new.reuseBuffer, new.conn))
+	new.out.SetWriter(new.conn, new.reuseBuffer)
 
 	new.reused = true
 	return true

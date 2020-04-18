@@ -3,7 +3,26 @@ package scp
 
 import (
 	"net"
+	"time"
 )
+
+type Accept interface {
+	Accept() (conn ConnInterface, err error)
+	Addr() string
+	Close() error
+}
+
+type ConnInterface interface {
+	Read(b []byte) (int, error)
+	Write(b []byte) (int, error)
+	RemoteAddr() net.Addr
+	LocalAddr() net.Addr
+	SetDeadline(t time.Time) error
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	Close() error
+}
+
 
 type SCPServer interface {
 	// allocate a id for connection
@@ -38,7 +57,7 @@ func (config *Config) clone() *Config {
 	}
 }
 
-func Server(conn net.Conn, config *Config) *Conn {
+func Server(conn ConnInterface, config *Config) *Conn {
 	if config.ScpServer == nil {
 		panic("config.ScpServer == nil")
 	}
@@ -52,7 +71,7 @@ func Server(conn net.Conn, config *Config) *Conn {
 }
 
 // Client wraps conn as scp.Conn
-func Client(conn net.Conn, config *Config) (*Conn, error) {
+func Client(conn ConnInterface, config *Config) (*Conn, error) {
 	if config == nil {
 		config = defaultConfig
 	}
