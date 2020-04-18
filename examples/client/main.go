@@ -16,6 +16,8 @@ import (
 	"github.com/ejoy/goscon/scp"
 	"github.com/xjdrew/glog"
 	"github.com/xtaci/kcp-go"
+
+	"github.com/gorilla/websocket"
 )
 
 type ClientCase struct {
@@ -117,7 +119,7 @@ func (cc *ClientCase) Start() error {
 		n = 1
 	}
 
-	raw, err := Dial(network, cc.connect)
+	raw, err := websocket.DefaultDialer.Dial(network, nil)
 	if err != nil {
 		glog.Errorf("dail failed: connect=%s, err=%s", cc.connect, err.Error())
 		return err
@@ -146,30 +148,54 @@ func (cc *ClientCase) Start() error {
 	return nil
 }
 
-func startEchoServer(laddr string) (net.Listener, error) {
-	ln, err := net.Listen("tcp", laddr)
-	if err != nil {
-		return nil, err
-	}
-
+var upgrader = websocket.Upgrader {
+	ReadBufferSize:  64*1024,
+	WriteBufferSize: 64*1024,
+}
+func startEchoServer(laddr string) error {
 	go func() {
-		for {
-			conn, err := ln.Accept()
+		http.HandleFunc("/", func (w http.ResponseWriter, r *http.Request) {
+			conn, err := upgrader.Upgrade(w, r, nil)
 			if err != nil {
-				break
+				glog.Errorln(err)
+				return
 			}
-			go func(c net.Conn) {
+
+			go func(c *websocket.Conn) {
 				defer c.Close()
 				if optVerbose {
-					wr := io.MultiWriter(c, os.Stdout)
-					io.Copy(wr, c)
+					for {
+						b := make([]byte, 256)
+						i, err := os.Stdout.Read(b)
+						if err != nil {
+							glog.Errorln(err)
+							break
+						}
+						err2 := c.WriteMessage(websocket.BinaryMessage, b[:i])
+						if err2 != nil {
+							glog.Errorln(err2)
+							break
+						}
+					}
 				} else {
-					io.Copy(c, c)
+					for {
+						_, buf, err := c.ReadMessage()
+						if err != nil {
+							glog.Errorln(err)
+							break
+						}
+						err = c.WriteMessage(websocket.BinaryMessage, buf)
+						if err != nil {
+							glog.Errorln(err)
+							break
+						}
+					}
 				}
 			}(conn)
-		}
+		})
+		http.ListenAndServe(laddr, nil)
 	}()
-	return ln, nil
+	return nil
 }
 
 func testN() {
@@ -234,13 +260,13 @@ func main() {
 	}
 
 	if echoServer != "" {
-		ln, err := startEchoServer(echoServer)
+		err := startEchoServer(echoServer)
 		if err != nil {
 			glog.Errorf("start echo server: %s", err.Error())
 			return
 		}
 		glog.Info("run as echo server")
-		glog.Infof("listen %s", ln.Addr())
+		// glog.Infof("listen %s", ln.Addr())
 		ch := make(chan bool, 0)
 		ch <- true
 		return

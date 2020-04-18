@@ -104,15 +104,18 @@ func NewWsListener(laddr string) (*WSListener, error) {
 		addr: laddr,
 		connCh: make(chan *websocket.Conn, 256),
 	}
-	http.HandleFunc("/", func (w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			glog.Errorln(err)
-			return
-		}
-		ws.onAccept(conn)
-	})
-	glog.Fatal(http.ListenAndServe(laddr, nil))
+
+	go func() {
+		http.HandleFunc("/", func (w http.ResponseWriter, r *http.Request) {
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				glog.Errorln(err)
+				return
+			}
+			ws.onAccept(conn)
+		})
+		glog.Fatal(http.ListenAndServe(laddr, nil))
+	}()
 
 	return ws, nil
 }
